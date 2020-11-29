@@ -21,9 +21,17 @@ func Patch(src interface{}, dst interface{}, lockTag string) error {
 
 Example:
 ```
+type T1 struct {
+	A	string              // skip if zero value
+	B	*string             // skip if nil
+	C	string `lock:""`    // skip if tag used
+	D	*string `lock:""`   // skip if tag used
+}
+
+src = &T1{...}
+dst = &T1{...}
 err := structpatch.Patch(src, dst, "lock")
 ```
-
 
 Patch will range over public source fields of any types. If field name is present in the destination, it may be overwritten following these rules:
 
@@ -57,4 +65,4 @@ Only the pointer will be copied, so values are referenced, not deep copied.
 
 You can pass a field tag of the destination to lock it and skip.
 
-Beware that Zero values (on naked type fields) will not be used to patch. So, if some new value is equal to the type Zero value (string:"", int:0, etc.) it will not be used!
+Beware that Zero values (on naked type fields) will skip. If some new value is equal to the type Zero value (string:"", int:0, etc.) it will not be used! Use pointer field source if you want to set to zero value.
