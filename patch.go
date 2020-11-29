@@ -7,75 +7,123 @@ import (
 
 func Patch(src interface{}, dst interface{}, lockTag string) error {
 	if reflect.TypeOf(src).Kind() != reflect.Ptr {
-		return errors.New("src_not_struct_pointer")
+		return errors.New("src_not_pointer: " + reflect.TypeOf(src).Kind().String())
 	}
 
 	if reflect.TypeOf(dst).Kind() != reflect.Ptr {
-		return errors.New("dst_not_struct_pointer")
+		return errors.New("dst_not_pointer: " + reflect.TypeOf(dst).Kind().String())
 	}
 
-	// not necessary because we search by field name
-	// if reflect.TypeOf(src).Kind() != reflect.TypeOf(dst).Kind() {
-	// 	return errors.New("src_dst_different_types")
-	// }
+	A := reflect.ValueOf(src).Elem()
+	AT := reflect.TypeOf(src).Elem()
 
-	srcStructValue := reflect.ValueOf(src).Elem()
-	// srcStructType := reflect.TypeOf(src).Elem()
-
-	dstStructValue := reflect.ValueOf(dst).Elem()
-	dstStructType := reflect.TypeOf(dst).Elem()
-
-	if srcStructValue.Kind() != reflect.Struct {
-		return errors.New("src underlying value must be a struct (*T)")
+	if A.Kind() != reflect.Struct {
+		return errors.New("src underlying value must be a struct (*Struct)")
 	}
 
-	if dstStructValue.Kind() != reflect.Struct {
-		return errors.New("dst underlying value must be a struct (*T)")
+	B := reflect.ValueOf(dst).Elem()
+	BT := reflect.TypeOf(dst).Elem()
+
+	if B.Kind() != reflect.Struct {
+		return errors.New("dst underlying value must be a struct (*Struct)")
 	}
 
 
-	for i := 0; i < srcStructValue.NumField(); i++ {
-		fieldName := srcStructValue.Type().Field(i).Name
+	for i := 0; i < A.NumField(); i++ {
+		/*
+			Will accept: Field with name F (public) and type or pointer to type.
+			Rules for copy
 
-		dstFieldValue := dstStructValue.FieldByName(fieldName)
+			 a zero			 skip		ok
+			*a nil			 skip		ok
+			 a != (*)b		 skip		ok
+			 a 				 b =>  a	ok
+			 a		 		*b => *a	ok
+		  (*)a != b       	 skip		ok
+			*a      		 b =>  a	ok
+			*a           	*b => *a	ok
+		  (*)a != (*)b		 skip		ok
+		*/
 
-		if dstFieldValue.IsZero() {
-			// dst field not found
+		fieldName := AT.Field(i).Name
+
+		Af, _ := AT.FieldByName(fieldName)
+		Bf, ok := BT.FieldByName(fieldName)
+		if !ok {
+			// B does not contain field
 			continue
 		}
 
-		if !dstFieldValue.CanAddr() {
-			// dst field is not addressable return error
-			return errors.New(`cant address field on dst`)
+		// field pointer kind
+		var Afpk reflect.Kind = reflect.Invalid
+		var Bfpk reflect.Kind = reflect.Invalid
+
+		// field final kind (real value kind, not pointer)
+		var Affk reflect.Kind = reflect.Invalid
+		var Bffk reflect.Kind = reflect.Invalid
+
+		Afk := Af.Type.Kind()
+		Affk = Afk
+		if Afk == reflect.Ptr {
+			Afpk = Af.Type.Elem().Kind()
+			Affk = Afpk
 		}
 
-		if _, locked := dstStructType.Field(i).Tag.Lookup(lockTag); locked {
-			// field is locked by tag
+		Bfk := Bf.Type.Kind()
+		Bffk = Bfk
+		if Bfk == reflect.Ptr {
+			Bfpk = Bf.Type.Elem().Kind()
+			Bffk = Bfpk
+		}
+
+		// underlying field kinds are invalid or different
+		//    a != (*)b		skip
+		// (*)a != b		skip
+		// (*)a != (*)b		skip
+		if Affk == reflect.Invalid || Bffk == reflect.Invalid || Affk != Bffk {
 			continue
 		}
 
-		// not needed anymore. if field is pointer, skip only if nil (later)
-		// if srcStructValue.Field(i).Kind() == reflect.Ptr && !srcStructValue.Field(i).IsNil() && srcStructValue.Field(i).Elem().IsZero() {
-		// 	// field is ptr and value is zero
-		// 	continue
-		// }
-
-
-		// same name, different type // maybe if destination is ptr, set value
-		if dstStructValue.FieldByName(fieldName).Kind() != srcStructValue.Field(i).Kind() {
-			// fields have different types
+		if _, locked := Bf.Tag.Lookup(lockTag); locked {
 			continue
 		}
 
-		// src field is nil ptr
-		if srcStructValue.Field(i).Kind() == reflect.Ptr && srcStructValue.Field(i).IsNil() {
-			// skipping src nil pointer // nil means it was not set, example from json
+		Av := A.FieldByName(fieldName)
+		// not found
+		// a zero			 skip
+		if Av.IsZero() {
 			continue
 		}
 
-		// src field value (or ptr underlying value) is valid and not zero
-		if srcStructValue.Field(i).IsValid() && !srcStructValue.Field(i).IsZero() {
-			dstStructValue.FieldByName(fieldName).Set(srcStructValue.Field(i))
+		Bv := B.FieldByName(fieldName)
+
+		if Av.Kind() != reflect.Ptr {
+			// a
+			// a 				 b =>  a
+			if Bv.Kind() != reflect.Ptr {
+				Bv.Set(Av)
+				continue
+			}
+			// a		 		*b => *a
+			if Bv.IsNil() {
+				Bv = reflect.New(Bv.Type())
+			}
+			Bv.Elem().Set(Av)
+			continue
+		} else {
+			// *a
+			// *a nil			 skip
+			if Av.IsNil() {
+				continue
+			}
+			// *a      		 b =>  a
+			if Bv.Kind() != reflect.Ptr {
+				Bv.Set(Av.Elem())
+				continue
+			}
+			// *a           *b => *a
+			Bv.Set(Av)
+			continue
 		}
 	}
 
