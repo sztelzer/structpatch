@@ -55,12 +55,12 @@ func Patch(src interface{}, dst interface{}, lockTag string) error {
 		}
 
 		// field pointer kind
-		var Afpk reflect.Kind = reflect.Invalid
-		var Bfpk reflect.Kind = reflect.Invalid
+		var Afpk = reflect.Invalid
+		var Bfpk = reflect.Invalid
 
 		// field final kind (real value kind, not pointer)
-		var Affk reflect.Kind = reflect.Invalid
-		var Bffk reflect.Kind = reflect.Invalid
+		var Affk = reflect.Invalid
+		var Bffk = reflect.Invalid
 
 		Afk := Af.Type.Kind()
 		Affk = Afk
